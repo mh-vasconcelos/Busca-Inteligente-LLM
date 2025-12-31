@@ -1,4 +1,4 @@
-from rapidfuzz import fuzz
+from rapidfuzz import process, fuzz
 import pandas as pd
 
 def carregar_sinonimos(caminho_arquivo):
@@ -48,47 +48,6 @@ def aplicar_sinonimos_na_query(query_usuario, mapper):
     return " ".join(nova_query)
 
 
-
-# def buscar_com_ia(query_usuario, df, mapper):
-#     # Passo A: Traduzir a intenção
-#     query_tunada = aplicar_sinonimos_na_query(query_usuario, mapper)
-#     print(f"IA Interpretou: '{query_usuario}' --> '{query_tunada}'")
-    
-#     resultados_bons = []
-#     todos_resultados = []
-    
-#     # Passo B: Calcular Score para TODOS os produtos
-#     for idx, row in df.iterrows():
-#         full_text = str(row['soup']).lower()
-        
-#         #partial garante que "disco de algodao" tenha boa correspondencia com "disco", por exemplo.
-#         score = fuzz.token_set_ratio(query_tunada, full_text)
-        
-#         item = {
-#             "produto_original": row['input_original'],
-#             "interpretacao_ia": f"{row['familia_origem']} {row['marca']}",
-#             "score": round(score, 1)
-#         }
-        
-#         todos_resultados.append(item)
-        
-#         if score >= 65:
-#             resultados_bons.append(item)
-    
-#     # Passo C: Lógica de Fallback (Plano B)
-#     if len(resultados_bons) == 0:
-#         print("⚠️ Nenhum match acima do treeshold encontrado. Exibindo resultados aproximados (Fallback).")
-#         todos_ordenados = sorted(todos_resultados, key=lambda x: x['score'], reverse=True)
-#         return todos_ordenados[:5]
-            
-#     # Passo D: Se achou coisa boa, ordena e retorna só os bons
-#     resultados_finais = sorted(resultados_bons, key=lambda x: x['score'], reverse=True)
-    
-#     return resultados_finais[:5]
-
-from rapidfuzz import process, fuzz
-import numpy as np
-
 def buscar_com_ia(query_usuario, df, mapper):
     # --- CONFIGURAÇÃO INTELIGENTE ---
     # Estrutura: 'coluna': (Peso, Threshold_Minimo)
@@ -102,6 +61,9 @@ def buscar_com_ia(query_usuario, df, mapper):
         'numero_cor':   (5, 95),  # Numeração tem que ser exata
         'ingredientes_destaque': (3,70),
         'beneficio_principal': (3,70),
+        'apresentacao': (3,70),
+        'finalidade_uso': (3,70),
+        'composicao_especifica': (3,70),
         'soup':         (1, 60)   # Soup aceita match mais solto
     }
     
@@ -140,13 +102,9 @@ def buscar_com_ia(query_usuario, df, mapper):
             conteudo = str(row[col]).lower()
             if not conteudo: continue
             
-            # Scorer Selection
-            if col in ['marca', 'nome_cor', 'numero_cor']:
-                # Marcas e Cores preferem match exato ou partial
-                # Partial ajuda se query="Shampoo Elseve" e Marca="Elseve" -> 100%
-                score_base = fuzz.token_set_ratio(query_tunada.lower(), conteudo)
-            else:
-                score_base = fuzz.token_set_ratio(query_tunada.lower(), conteudo)
+     
+            score_base = fuzz.token_set_ratio(query_tunada.lower(), conteudo)
+
             
             # --- O PULO DO GATO (CONFIDENCE GATE) ---
             if score_base < threshold_minimo:
