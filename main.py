@@ -3,7 +3,7 @@ import pandas as pd
 
 mapper = carregar_sinonimos("synonyms.txt")
 df = pd.read_csv('resultado_normalizacao_ia_unificado.csv')
-df_normalizado = normalizar_dataframe(query=df)
+df_normalizado = normalizar_dataframe(df=df)
 
 print("------------- BUSCADOR INTELIGENTE -------------\n")
 
