@@ -29,7 +29,7 @@ for index, row in amostra.iterrows():
     produto_sujo = row['descricao_detalhada']
     familia = str(row['categoria_familia']).upper()
     
-    # 1. ROTEADOR (Decide qual Schema usar)
+    # 1. ROTEADOR
     if "CUIDADO CAPILAR" in familia:
         schema_escolhido = SCHEMA_HAIRCARE
         role_especialista = "Especialista em Haircare e Tratamentos Capilares"
@@ -37,9 +37,9 @@ for index, row in amostra.iterrows():
         schema_escolhido = SCHEMA_MANICURE
         role_especialista = "Especialista em Manicure, Unhas e Acessórios"
     else:
-        continue # Pula categorias desconhecidas
+        continue 
 
-    # 2. CONTEXTO (Usa as colunas unificadas para dar dica a IA)
+    # 2. CONTEXTO
     contexto_auxiliar = f"Tipo: {row['tipo_produto']} | Detalhe: {row['subtipo_funcao']}"
 
     try:
@@ -67,7 +67,7 @@ for index, row in amostra.iterrows():
                     """,
                 }
             ],
-            model="qwen/qwen3-32b", # Ou o modelo de sua preferência
+            model="qwen/qwen3-32b", 
             temperature=0, 
             response_format={"type": "json_object"}
         )
@@ -76,9 +76,9 @@ for index, row in amostra.iterrows():
         resposta_texto = chat_completion.choices[0].message.content
         resposta_dict = json.loads(resposta_texto)
         
-        # Achatar o JSON (Opcional, mas ajuda a salvar em CSV plano)
-        # Se a IA retornar aninhado, você pode salvar o dict inteiro ou extrair chaves principais
-        # Aqui salvamos o dict bruto + metadados
+        # Achatar o JSON 
+        # Se a IA retornar aninhado, salvar o dict inteiro ou extrair chaves principais
+        # salva o dict bruto + metadados
         flat_dict = {}
         for grupo, atributos in resposta_dict.items():
             if isinstance(atributos, dict):
@@ -100,7 +100,7 @@ for index, row in amostra.iterrows():
 
 df_final = pd.DataFrame(dados_processados)
 
-# Lista de colunas prioritárias para busca (junta as de Cabelo e Unha)
+# Lista de colunas prioritárias para busca
 cols_soup = [
     'tipo_produto', 'marca', 'linha', 'nome_cor', 'cor_visual', 
     'acabamento_efeito', 'curvatura_indicada', 'beneficio_principal', 

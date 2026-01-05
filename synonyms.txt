@@ -132,4 +132,6 @@ tint, tinta de cabelo, tintura, coloracao, tinta para cabelo, tintura de cabelo,
 
 # Unha Postiça
 unha postica, unhas posticas, unha falsa, unhas falsas, tips de unha, tips para unha => Unha Postiça
+# Marcas
+risk, riske, risqu => risque
 ```

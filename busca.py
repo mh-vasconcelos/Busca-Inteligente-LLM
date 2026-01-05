@@ -1,5 +1,7 @@
+# busca.py
 from rapidfuzz import process, fuzz
 import pandas as pd
+import unicodedata
 
 def carregar_sinonimos(caminho_arquivo):
     """
@@ -11,10 +13,9 @@ def carregar_sinonimos(caminho_arquivo):
     try:
         with open(caminho_arquivo, 'r', encoding='utf-8') as f:
             for linha in f:
-                # Ignora comentários e linhas vazias
                 if not linha.strip() or linha.startswith("#"):
                     continue
-                
+
                 # Quebra a linha na seta "=>"
                 if "=>" in linha:
                     termos_errados_str, termo_correto = linha.split("=>")
@@ -25,7 +26,7 @@ def carregar_sinonimos(caminho_arquivo):
                     for v in variacoes:
                         chave = v.strip().lower() # Normaliza para minúsculo
                         if chave:
-                            mapper[chave] = termo_correto
+                            mapper[chave] = termo_correto.strip().lower()
         return mapper
     except FileNotFoundError:
         print("Arquivo de sinônimos não encontrado.")
@@ -47,92 +48,131 @@ def aplicar_sinonimos_na_query(query_usuario, mapper):
     
     return " ".join(nova_query)
 
+def remover_acentos(texto: str) -> str:
+    nfkd_form = unicodedata.normalize('NFKD', texto)
+    return "".join(c for c in nfkd_form if not unicodedata.combining(c))
 
-def buscar_com_ia(query_usuario, df, mapper):
-    # --- CONFIGURAÇÃO INTELIGENTE ---
-    # Estrutura: 'coluna': (Peso, Threshold_Minimo)
-    # Threshold_Minimo: Nota mínima (0-100) para o peso ser ativado.
-    # Isso impede que "Amorável" (Score 43) ganhe peso 4x.
+def normalizar_dataframe(df):
+    """
+    Normaliza todas as colunas de texto de um DataFrame.
+
+    Para cada coluna de texto, esta função:
+    1. Preenche valores nulos com uma string vazia.
+    2. Converte todo o texto para minúsculas.
+    3. Remove acentos e caracteres de combinação.
+
+    Args:
+        df (pd.DataFrame): O DataFrame de entrada.
+
+    Returns:
+        pd.DataFrame: Um novo DataFrame com as colunas de texto normalizadas.
+    """
+    df = df.copy()
+    colunas_texto = df.select_dtypes(include=['object', 'string']).columns
+    for col in colunas_texto:
+        df[col] = (
+            df[col]
+            .fillna('')         
+            .astype(str)        
+            .str.lower()        
+            .apply(remover_acentos)
+        )
+    
+    return df
+
+
+
+STOPWORDS_PT = {
+    'de', 'da', 'do', 'das', 'dos', 
+    'e', 'ou', 'com', 'sem', 'para', 'p', 'pro', 'pra', 
+    'em', 'no', 'na', 'kit', 'unid', 'un', 'ml', 'g'
+}
+
+def limpar_stopwords(texto):
+    """Remove palavras inúteis da frase."""
+    palavras = texto.lower().split()
+    palavras_uteis = [p for p in palavras if p not in STOPWORDS_PT]
+    return " ".join(palavras_uteis) if palavras_uteis else texto
+
+def calcular_melhor_token(query_completa, conteudo_alvo, metodo='ratio'):
+    """Testa palavra por palavra para evitar ruído de frases longas."""
+    palavras_query = query_completa.split()
+    melhor_score = 0
+    
+    for palavra in palavras_query:
+        if len(palavra) < 2 or palavra in STOPWORDS_PT: continue
+        
+        if metodo == 'ratio':
+            score = fuzz.ratio(palavra, conteudo_alvo)
+        elif metodo == 'partial':
+            score = fuzz.partial_ratio(palavra, conteudo_alvo)
+            
+        if score > melhor_score:
+            melhor_score = score
+    return melhor_score
+
+def buscar_com_ia(query_usuario, df, mapper=None):
+    query_normalizada = remover_acentos(query_usuario).lower()
+
+    if mapper:
+        query_tratada = aplicar_sinonimos_na_query(query_normalizada, mapper)
+    else:
+        query_tratada = query_normalizada
+
+    query_limpa = limpar_stopwords(query_tratada)
+    
     REGRAS_PESOS = {
-        'marca':        (4, 80),  # Só ganha 4x se for >80% igual (Evita ruído)
-        'tipo_produto': (3, 70),  # Só ganha 3x se for >70% igual
-        'linha':        (2, 70),  
-        'nome_cor':     (3, 85),  # Cor tem que ser precisa
-        'numero_cor':   (5, 95),  # Numeração tem que ser exata
-        'ingredientes_destaque': (3,70),
-        'beneficio_principal': (3,70),
-        'apresentacao': (3,70),
-        'finalidade_uso': (3,70),
-        'composicao_especifica': (3,70),
-        'soup':         (1, 60)   # Soup aceita match mais solto
-    }
-    
-    # 1. Tratamento da Query
-    query_tunada = aplicar_sinonimos_na_query(query_usuario, mapper)
-    
-    # 2. Correção de Marca (A "Vacina" para elserve -> Elseve)
-    # Tenta achar token de marca dentro da query composta
-    marcas_conhecidas = df['marca'].dropna().unique().tolist()
-    
-    # Busca parcial para pegar "Elseve" dentro de "Shampoo Elseve"
-    match_marca_parcial = process.extractOne(
-        query_tunada, 
-        marcas_conhecidas, 
-        scorer=fuzz.partial_ratio # Aqui o partial brilha!
-    )
-    
-    if match_marca_parcial and match_marca_parcial[1] > 85:
-        marca_detectada = match_marca_parcial[0]
-        # Se achou a marca, garante que ela esteja escrita certa na query
-        # Isso transforma "elserve" em "Elseve" implicitamente na comparação futura
-        print(f"🔧 Marca Detectada na frase: '{marca_detectada}'")
-        # Opcional: Você pode forçar a query a ser APENAS a marca ou concatenar
+            'marca':        (4, 80),  # Só ganha 4x se for >80% igual 
+            'tipo_produto': (3, 70),  # Só ganha 3x se for >70% igual
+            'linha':        (2, 70),  
+            'nome_cor':     (3, 85),  # Cor tem que ser precisa
+            'numero_cor':   (5, 95),  # Numeração tem que ser exata
+            'ingredientes_destaque': (3,70),
+            'beneficio_principal': (3,75),
+            'apresentacao': (3,75),
+            'finalidade_uso': (3,75),
+            'composicao_especifica': (3,75),
+            'soup':         (1, 60)   # Soup aceita match mais solto
+        }
     
     resultados_bons = []
-    todos_resultados = []
     
-    # Passo B: Score Ponderado com Trava de Segurança
     for idx, row in df.iterrows():
-        melhor_score_produto = 0
-        campo_vencedor = "nenhum"
+        score_total_produto = 0
+        motivos = []
         
         for col, (peso, threshold_minimo) in REGRAS_PESOS.items():
             if col not in df.columns or pd.isna(row[col]): continue
-            
             conteudo = str(row[col]).lower()
-            if not conteudo: continue
             
-     
-            score_base = fuzz.token_set_ratio(query_tunada.lower(), conteudo)
-
-            
-            # --- O PULO DO GATO (CONFIDENCE GATE) ---
-            if score_base < threshold_minimo:
-                # Se o match foi ruim (ex: Amorável = 43), IGNORA O PESO.
-                # Score final vira 0 ou muito baixo, matando o falso positivo.
-                score_final = 0 
+            # SELEÇÃO DE ESTRATÉGIA 
+            # mais rigoroso => nome do produto ou cor
+            if col in ['tipo_produto', 'nome_cor']:
+                score_base = calcular_melhor_token(query_limpa, conteudo, metodo='ratio')
+            # menos rigoroso => nomes maiores
+            elif col in ['ingredientes_destaque', 'apresentacao']:
+                score_base = calcular_melhor_token(query_limpa, conteudo, metodo='partial')
+            # complexo
+            elif col == 'marca':
+                score_base = fuzz.partial_token_set_ratio(query_limpa, conteudo)
+            # default
             else:
-                score_final = score_base * peso
+                score_base = fuzz.token_set_ratio(query_limpa, conteudo)
             
-            if score_final > melhor_score_produto:
-                melhor_score_produto = score_final
-                campo_vencedor = col
-
-        item = {
-            "produto": row['input_original'],
-            "score": melhor_score_produto,
-            "motivo": f"Match: {campo_vencedor}"
-        }
+            # --- CONFIDENCE GATE ---
+            if score_base >= threshold_minimo:
+                pontos = score_base * peso
+                score_total_produto += pontos
+                motivos.append(f"{col}({score_base})")
         
-        todos_resultados.append(item)
-        
-        # Só aceita se tiver pontuado em algum critério relevante
-        if melhor_score_produto > 0: 
-            resultados_bons.append(item)
-    
-    # Ordenação e Retorno
-    if not resultados_bons:
-        print("⚠️ Sem resultados exatos.")
-        return sorted(todos_resultados, key=lambda x: x['score'], reverse=True)[:5]
-        
+        if score_total_produto > 0:
+            resultados_bons.append({
+                "produto": row['input_original'],
+                "score": score_total_produto,
+                "motivo": ", ".join(motivos),
+                "debug": f"Marca: {row.get('marca')} | Tipo: {row.get('tipo_produto')}"
+            })
+            
     return sorted(resultados_bons, key=lambda x: x['score'], reverse=True)[:5]
+
+
