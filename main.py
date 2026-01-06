@@ -11,6 +11,16 @@ busca_user = input("Digite sua Busca\n")
 
 results = buscar_com_ia(query_usuario=busca_user, df=df_normalizado, mapper=mapper)
 print("------------- RESULTADOS -------------\n")
-for i in results:
-  print(i)
+for dicionario in results:
+    produto = dicionario['produto']
+    score = dicionario['score']
+    motivo = dicionario['motivo']
+    debug = dicionario['debug']
+
+    print("Produto:", produto)
+    print("Score Fuzzy:", score)
+    print("Motivo:", motivo)
+    print("Debug:", debug)
+    print("\n")
+  
 

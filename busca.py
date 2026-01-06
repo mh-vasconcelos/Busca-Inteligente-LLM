@@ -122,8 +122,8 @@ def buscar_com_ia(query_usuario, df, mapper=None):
     query_limpa = limpar_stopwords(query_tratada)
     
     REGRAS_PESOS = {
-            'marca':        (4, 80),  # Só ganha 4x se for >80% igual 
-            'tipo_produto': (3, 70),  # Só ganha 3x se for >70% igual
+            'marca':        (4, 85),  # Só ganha 4x se for >80% igual 
+            'tipo_produto': (5, 80),  # Só ganha 5x se for >80% igual
             'linha':        (2, 70),  
             'nome_cor':     (3, 85),  # Cor tem que ser precisa
             'numero_cor':   (5, 95),  # Numeração tem que ser exata
